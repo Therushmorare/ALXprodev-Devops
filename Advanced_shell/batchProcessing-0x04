@@ -1,56 +1,31 @@
 #!/bin/bash
+# batchProcessing-0x04
+# Fetch Pokémon data in parallel and manage background processes
 
-# Directory to store Pokémon data
+POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
 OUTPUT_DIR="pokemon_data"
+
 mkdir -p "$OUTPUT_DIR"
 
-# List of Pokémon to fetch
-POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
-
-# Error log file
-ERROR_LOG="errors.txt"
-> "$ERROR_LOG"  # Clear previous errors
-
-# Function to fetch Pokémon data with retry logic
-fetch_pokemon() {
-    local name="$1"
-    local retries=3
-    local attempt=1
-    local success=false
-
-    echo "Fetching data for $name..."
-
-    while [ $attempt -le $retries ]; do
-        # Fetch data quietly (-s) and capture HTTP status code
-        response=$(curl -s -w "%{http_code}" -o "$OUTPUT_DIR/$name.json" "https://pokeapi.co/api/v2/pokemon/$name")
-        status_code="${response:(-3)}"
-
-        if [ "$status_code" -eq 200 ]; then
-            echo "Saved data to $OUTPUT_DIR/$name.json ✅"
-            success=true
-            break
-        else
-            echo "Attempt $attempt failed for $name (HTTP $status_code). Retrying..."
-            sleep 1
-            attempt=$((attempt+1))
-        fi
-    done
-
-    if [ "$success" = false ]; then
-        echo "Failed to fetch data for $name after $retries attempts ❌" | tee -a "$ERROR_LOG"
-        [ -f "$OUTPUT_DIR/$name.json" ] && rm "$OUTPUT_DIR/$name.json"
-    fi
+# Cleanup any background processes on exit
+cleanup() {
+    echo "Cleaning up background processes..."
+    kill $(jobs -p) 2>/dev/null
 }
+trap cleanup EXIT
 
-# Fetch all Pokémon in parallel
 for pokemon in "${POKEMON_LIST[@]}"; do
-    fetch_pokemon "$pokemon" &
+    {
+        echo "Fetching data for $pokemon..."
+        if curl -s "https://pokeapi.co/api/v2/pokemon/$pokemon" -o "$OUTPUT_DIR/$pokemon.json"; then
+            echo "Saved data to $OUTPUT_DIR/$pokemon.json ✅"
+        else
+            echo "Error fetching $pokemon" >&2
+        fi
+    } &
 done
 
-# Wait for all background jobs to finish
+# Wait for all background jobs to complete
 wait
-
-echo
-echo "All Pokémon fetch operations completed."
-echo "Errors logged to $ERROR_LOG (if any)."
+echo "All Pokémon data fetched!"
 
